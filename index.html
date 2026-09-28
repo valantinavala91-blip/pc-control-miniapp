@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="PC Control Mini App">
+  <title>PC Control</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e; color: #eee; min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center; padding: 20px 16px;
+    }
+    h1 { font-size: 1.4rem; margin-bottom: 16px; font-weight: 600; }
+    .card {
+      background: #16213e; border-radius: 16px; padding: 16px; width: 100%; max-width: 360px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3); margin-bottom: 12px;
+    }
+    .status-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .stat { background: #0f0f23; border-radius: 12px; padding: 12px; text-align: center; }
+    .stat-label { font-size: 0.75rem; color: #889; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-value { font-size: 1.5rem; font-weight: 700; color: #00d4aa; margin-top: 4px; }
+    .stat-value.warn { color: #ffb800; }
+    .stat-value.danger { color: #ff4757; }
+    .btn-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 16px; }
+    .btn {
+      border: none; border-radius: 12px; padding: 14px; font-size: 0.95rem; font-weight: 600;
+      cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px;
+      transition: transform 0.1s, opacity 0.2s; user-select: none;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: linear-gradient(135deg, #00d4aa, #00b894); color: #0a1a15; }
+    .btn-danger { background: linear-gradient(135deg, #ff4757, #ee3d4a); color: white; }
+    .btn-secondary { background: linear-gradient(135deg, #3742fa, #2f35d8); color: white; }
+    .btn-warning { background: linear-gradient(135deg, #ffb800, #e6a300); color: #1a1a00; }
+    .btn-icon { font-size: 1.3rem; line-height: 1; }
+    .btn-text { font-size: 0.8rem; }
+    .screenshot-container { margin-top: 16px; display: none; }
+    .screenshot-container img { width: 100%; border-radius: 12px; border: 1px solid #2a2a4a; }
+    .toast {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(100px);
+      background: #16213e; border-radius: 12px; padding: 12px 20px; color: #eee;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4); opacity: 0; transition: all 0.3s ease; z-index: 100;
+      border-left: 4px solid #00d4aa;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.error { border-left-color: #ff4757; }
+    .toast.warning { border-left-color: #ffb800; }
+    .refresh-btn { width: 100%; margin-top: 12px; padding: 10px; font-size: 0.85rem; }
+    .loading { display: inline-block; width: 16px; height: 16px; border: 2px solid transparent;
+      border-top-color: currentColor; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 8px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <h1>🖥️ PC Control</h1>
+
+  <div class="card">
+    <div class="status-grid" id="statusGrid">
+      <div class="stat"><div class="stat-label">CPU</div><div class="stat-value" id="cpuVal">--%</div></div>
+      <div class="stat"><div class="stat-label">RAM</div><div class="stat-value" id="ramVal">--%</div></div>
+      <div class="stat"><div class="stat-label">Disk C:</div><div class="stat-value" id="diskVal">--%</div></div>
+      <div class="stat"><div class="stat-label">Battery</div><div class="stat-value" id="batVal">--%</div></div>
+    </div>
+
+    <div class="btn-grid">
+      <button class="btn btn-primary" id="btnStatus" onclick="fetchStatus()">
+        <span class="btn-icon">🔄</span><span class="btn-text">Обновить</span>
+      </button>
+      <button class="btn btn-secondary" id="btnScreenshot" onclick="takeScreenshot()">
+        <span class="btn-icon">📸</span><span class="btn-text">Скриншот</span>
+      </button>
+      <button class="btn btn-warning" id="btnLock" onclick="confirmAction('lock', 'Заблокировать компьютер?')">
+        <span class="btn-icon">🔒</span><span class="btn-text">Заблокировать</span>
+      </button>
+      <button class="btn btn-danger" id="btnCancel" onclick="sendAction('cancel')">
+        <span class="btn-icon">⛔</span><span class="btn-text">Отменить выкл.</span>
+      </button>
+      <button class="btn btn-danger" id="btnRestart" onclick="confirmAction('restart', 'Перезагрузить компьютер?')">
+        <span class="btn-icon">🔄</span><span class="btn-text">Перезагрузка</span>
+      </button>
+      <button class="btn btn-danger" id="btnShutdown" onclick="confirmAction('shutdown', 'Выключить компьютер?')">
+        <span class="btn-icon">⏻</span><span class="btn-text">Выключить</span>
+      </button>
+    </div>
+
+    <div class="screenshot-container" id="screenshotContainer">
+      <img id="screenshotImg" alt="Screenshot">
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // ===== НАСТРОЙКА: вставьте сюда ваш URL туннеля =====
+    const API_BASE = 'https://compact-telecommunications-tap-list.trycloudflare.com';
+    // ===================================================
+
+    let pendingAction = null;
+    const toast = document.getElementById('toast');
+
+    function showToast(msg, type = 'success') {
+      toast.textContent = msg;
+      toast.className = 'toast show ' + (type === 'error' ? 'error' : type === 'warning' ? 'warning' : '');
+      setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    function setLoading(btnId, loading) {
+      const btn = document.getElementById(btnId);
+      if (loading) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="loading"></span><span class="btn-text">Загрузка...</span>';
+      } else {
+        btn.disabled = false;
+      }
+    }
+
+    async function api(action, method = 'POST', body = null) {
+      const url = `${API_BASE}/api/${action}`;
+      const opts = { method, headers: { 'Content-Type': 'application/json' } };
+      if (body) opts.body = JSON.stringify(body);
+      const res = await fetch(url, opts);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Network error' }));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      return res.json();
+    }
+
+    async function fetchStatus() {
+      setLoading('btnStatus', true);
+      try {
+        const data = await api('action', 'POST', { action: 'status' });
+        updateStatus(data.data);
+        showToast('Статус обновлён');
+      } catch (e) {
+        showToast('Ошибка: ' + e.message, 'error');
+      } finally {
+        setLoading('btnStatus', false);
+        document.getElementById('btnStatus').innerHTML = '<span class="btn-icon">🔄</span><span class="btn-text">Обновить</span>';
+      }
+    }
+
+    function updateStatus(d) {
+      const setVal = (id, val, suffix = '%') => {
+        const el = document.getElementById(id);
+        if (val === null || val === undefined) { el.textContent = 'N/A'; return; }
+        el.textContent = Math.round(val) + suffix;
+        el.className = 'stat-value';
+        if (val > 80) el.classList.add('danger');
+        else if (val > 60) el.classList.add('warn');
+      };
+      setVal('cpuVal', d.cpu);
+      setVal('ramVal', d.ram);
+      setVal('diskVal', d.disk);
+      setVal('batVal', d.battery);
+    }
+
+    function confirmAction(action, message) {
+      if (confirm(message)) sendAction(action);
+    }
+
+    async function sendAction(action) {
+      const btnMap = { shutdown: 'btnShutdown', restart: 'btnRestart', lock: 'btnLock', cancel: 'btnCancel' };
+      const btnId = btnMap[action];
+      if (btnId) setLoading(btnId, true);
+
+      try {
+        const data = await api('action', 'POST', { action });
+        showToast(data.msg || 'Готово', data.ok ? 'success' : 'warning');
+        if (action !== 'screenshot') await fetchStatus();
+      } catch (e) {
+        showToast('Ошибка: ' + e.message, 'error');
+      } finally {
+        if (btnId) {
+          setLoading(btnId, false);
+          const icons = { shutdown: '⏻', restart: '🔄', lock: '🔒', cancel: '⛔' };
+          const texts = { shutdown: 'Выключить', restart: 'Перезагрузка', lock: 'Заблокировать', cancel: 'Отменить выкл.' };
+          document.getElementById(btnId).innerHTML = `<span class="btn-icon">${icons[action]}</span><span class="btn-text">${texts[action]}</span>`;
+        }
+      }
+    }
+
+    async function takeScreenshot() {
+      setLoading('btnScreenshot', true);
+      const container = document.getElementById('screenshotContainer');
+      const img = document.getElementById('screenshotImg');
+      container.classList.add('hidden');
+      try {
+        // Скриншот возвращает файл, не JSON
+        const res = await fetch(`${API_BASE}/api/action`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'screenshot' })
+        });
+        if (!res.ok) throw new Error('Failed to get screenshot');
+        const blob = await res.blob();
+        img.src = URL.createObjectURL(blob);
+        container.classList.remove('hidden');
+        showToast('Скриншот получен');
+      } catch (e) {
+        showToast('Ошибка скриншота: ' + e.message, 'error');
+      } finally {
+        setLoading('btnScreenshot', false);
+        document.getElementById('btnScreenshot').innerHTML = '<span class="btn-icon">📸</span><span class="btn-text">Скриншот</span>';
+      }
+    }
+
+    // Автозагрузка статуса при открытии
+    fetchStatus();
+  </script>
+</body>
+</html>
